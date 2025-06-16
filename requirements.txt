@@ -1,0 +1,17 @@
+streamlit
+langchain
+langchain-google-genai
+langgraph
+langchain-community
+langchain-chroma
+sentence-transformers
+pypdf
+python-dotenv
+requests
+beautifulsoup4
+biopython
+neo4j
+langchain-neo4j
+google-ai-generativelanguage
+scikit-learn
+numpy

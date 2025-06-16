@@ -1,0 +1,176 @@
+# MedGraphRAG: An Advanced, Evidence-Based Medical AI
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.9+-blue.svg" alt="Python Version">
+  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
+  <img src="https://img.shields.io/badge/Framework-LangChain%20%7C%20LangGraph-orange.svg" alt="LangChain">
+  <img src="https://img.shields.io/badge/Database-Neo4j%20%7C%20GDS-purple.svg" alt="Database">
+</p>
+
+**MedGraphRAG** is a sophisticated, adaptive Retrieval-Augmented Generation (RAG) system built for the high-stakes domain of medical knowledge. It goes beyond standard RAG by structuring information into a multi-layered knowledge graph, enabling it to provide responses that are not only accurate but also transparent, verifiable, and grounded in evidence.
+
+This project serves as a production-grade blueprint for building reliable AI systems in critical domains.
+
+## Key Architectural Innovations
+
+This system is built on four pillars that distinguish it from conventional RAG chatbots:
+
+#### 1. Overall System Architecture
+The MedGraphRAG ecosystem is divided into two main parts: the **Online Runtime Graph** that handles user queries in real-time, and the **Offline Knowledge Lifecycle** that ingests, organizes, and curates the knowledge base.
+
+```mermaid
+graph TD
+    subgraph "Online Runtime (app.py)"
+        A[User Query] --> B{Safety Filter};
+        B -- Safe --> C{Query Classifier};
+        C -- Foundational --> D[Answer from LLM Memory];
+        C -- Hybrid --> E[Agent w/ Web Search];
+        C -- Protocol --> F[U-Retrieval Node];
+        F -- Answer Found --> G[Final Answer Generation];
+        D --> G;
+        E -- Disclaimer Added --> G;
+        B -- Unsafe --> H[Canned Safety Response];
+        G --> I[Output to User];
+        H --> I;
+    end
+
+    subgraph "Offline Knowledge Lifecycle (Scripts)"
+        J[1. PDFs / Web Articles] --> K(ingest.py);
+        K -- Chunks & Entities --> L[Neo4j Triple Graph];
+        L --> M(tagging_pipeline.py);
+        M -- Tags & Hierarchy --> L;
+
+        N[2. User Feedback] --> O(expert_review_tool.py);
+        P[3. Automated Discovery] --> O;
+        O -- Approved Knowledge --> K;
+    end
+
+    I -- User Feedback --> N;
+    F -- Knowledge Gap --> P;
+Use code with caution.
+Markdown
+2. Triple Graph Construction
+Our knowledge base is a three-tiered graph in Neo4j, ensuring maximum reliability:
+Layer 1 (RAG Data): Knowledge extracted from your private documents.
+Layer 2 (Literature Repository): A trusted library of entities from medical papers and textbooks.
+Layer 3 (Controlled Vocabulary): A foundational layer of formal definitions from medical ontologies like UMLS.
+This structure enriches every piece of information with verifiable sources and definitions.
+3. Hierarchical Knowledge Organization & U-Retrieval Strategy
+We don't just dump vectors into a database. The system summarizes document chunks with medical tags, then uses an offline clustering process to build a multi-level semantic hierarchy. This enables a novel, two-phase retrieval process that mimics expert reasoning:
+sequenceDiagram
+    participant User
+    participant U_Retrieval as U-Retrieval Node
+    participant TagHierarchy as Tag Hierarchy (in Neo4j)
+    participant KnowledgeGraph as Triple Graph (in Neo4j)
+    participant LLM
+
+    User->>U_Retrieval: Submits "protocol" query
+    U_Retrieval->>LLM: Generate tags for query
+    LLM-->>U_Retrieval: Query Tags
+    
+    U_Retrieval->>TagHierarchy: 1. Top-Down Search with Query Tags
+    Note right of U_Retrieval: Navigates from abstract<br>to specific tag nodes
+    TagHierarchy-->>U_Retrieval: Most relevant MetaMedGraph chunk
+    
+    U_Retrieval->>KnowledgeGraph: Get initial context from chunk
+    KnowledgeGraph-->>U_Retrieval: Entities & Triple-linked neighbors
+    
+    U_Retrieval->>LLM: Generate initial answer from context
+    LLM-->>U_Retrieval: Initial Response
+    
+    U_Retrieval->>TagHierarchy: 2. Bottom-Up Refinement Path
+    loop For each parent tag in path
+        TagHierarchy-->>U_Retrieval: Parent Tag Summary
+        U_Retrieval->>LLM: Refine response with summary
+        LLM-->>U_Retrieval: Refined Response
+    end
+    
+    U_Retrieval-->>User: Final, context-rich answer
+Use code with caution.
+Mermaid
+4. Human-in-the-Loop Governance
+No knowledge enters the trusted graph without expert approval. A dedicated review tool allows a human to validate all AI-generated propositions and user feedback, ensuring the system's safety and integrity.
+Tech Stack
+Component	Technology	Purpose
+Orchestration	LangChain & LangGraph	Manages the complex, stateful agent workflow.
+LLM	Google Gemini	Provides the core generative and reasoning capabilities.
+Frontend	Streamlit	A simple, interactive web interface for the user.
+Graph Database	Neo4j & GDS Library	Stores the structured knowledge graph and performs high-speed vector searches.
+Embeddings	HuggingFace all-MiniLM-L6-v2	Generates vector representations of text for semantic understanding.
+External Tools	BioPython (Entrez)	Fetches real-time data from the PubMed scientific database.
+🚀 Getting Started: A Three-Stage Workflow
+To get MedGraphRAG running, you must follow these three stages in order.
+Stage 1: System Setup
+This stage prepares your environment.
+1. Clone the Repository:
+git clone https://github.com/YOUR_USERNAME/medgraphrag.git
+cd medgraphrag
+Use code with caution.
+Bash
+2. Install Dependencies:
+It's highly recommended to use a virtual environment.
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+Use code with caution.
+Bash
+3. Configure Neo4j with Graph Data Science (GDS):
+This is a critical step. The application will not work without the GDS plugin.
+docker run \
+    --name neo4j-medgraphrag \
+    -p 7474:7474 -p 7687:7687 \
+    -d \
+    --env NEO4J_AUTH=neo4j/your_password \
+    --env NEO4J_PLUGINS='["graph-data-science"]' \
+    neo4j:latest
+Use code with caution.
+Bash
+Note: Replace your_password with a strong password.
+4. Configure Environment Variables:
+Copy the template and fill in your credentials.
+cp .env.example .env
+Use code with caution.
+Bash
+Open the new .env file and add your GOOGLE_API_KEY and the NEO4J_PASSWORD you just created.
+Stage 2: Knowledge Base Construction
+This is the core offline process where you build the AI's brain.
+Step 2.1: Populate the Foundational Repository (One-Time Task)
+This script populates Neo4j with trusted medical literature and vocabularies (Layers 2 & 3). It includes sample data to run immediately.
+python populate_repository_graph.py
+Use code with caution.
+Bash
+(You will be asked to confirm before the script clears your database.)
+Step 2.2: Ingest Your Private Documents
+Place your own PDF documents (e.g., internal research, textbooks) into the data/ directory. Then, run the ingestion script to process them into the knowledge graph (Layer 1).
+python ingest.py
+Use code with caution.
+Bash
+Step 2.3: Build the Retrieval Hierarchy
+This script performs the heavy analysis to tag and cluster your knowledge for efficient retrieval.
+python tagging_pipeline.py
+Use code with caution.
+Bash
+This command will first tag any new documents. To run the full, expensive clustering process, you must uncomment the last line in tagging_pipeline.py and run it again. This is a periodic maintenance task, not an everyday one.
+Stage 3: Run the Application
+Once the knowledge base is built, you can start the interactive application.
+streamlit run app.py
+Use code with caution.
+Bash
+Navigate to the local URL provided by Streamlit (e.g., http://localhost:8501) to start chatting with MedGraphRAG.
+🔄 The Self-Improvement Workflow
+MedGraphRAG is designed to evolve. The workflow is managed by three key scripts:
+knowledge_pipeline.py (Proactive Discovery):
+What it does: Automatically scans trusted websites for new articles on topics of interest.
+Output: Generates Q&A "propositions" and saves them to pending_review.jsonl.
+How to run: python knowledge_pipeline.py (e.g., as a nightly cron job).
+expert_review_tool.py (Human Governance):
+What it does: A command-line interface for a subject matter expert to review all new knowledge sources: propositions from the pipeline, and user feedback from the app.
+How to run: python expert_review_tool.py
+The Magic: When you approve an item, it's not just saved—it's fully processed through the entire ingest.py pipeline, ensuring it becomes a native, structured part of the knowledge graph.
+tagging_pipeline.py (Re-organization):
+After approving new knowledge with the review tool, you should re-run the tagging pipeline to integrate the new information into the retrieval hierarchy.
+This loop ensures that the AI's knowledge base grows over time while maintaining the highest standards of accuracy and safety.
+Contribution
+We welcome contributions! Please feel free to submit a pull request or open an issue for bugs, feature requests, or improvements.
+License
+This project is licensed under the MIT License. See the LICENSE file for details.
