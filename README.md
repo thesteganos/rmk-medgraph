@@ -146,11 +146,22 @@ python ingest.py
 Use code with caution.
 Bash
 Step 2.3: Build the Retrieval Hierarchy
-This script performs the heavy analysis to tag and cluster your knowledge for efficient retrieval.
+This script tags your documents and then builds a multi-level semantic hierarchy for efficient retrieval. The process is split into two parts:
+
+1.  **Tagging New Documents**: This step identifies documents that haven't been tagged yet and generates tags for them.
+2.  **Building/Updating the Hierarchy**: This is a more intensive clustering process that organizes the tags into a hierarchy.
+
+To tag any new documents, run:
+```bash
 python tagging_pipeline.py
-Use code with caution.
-Bash
-This command will first tag any new documents. To run the full, expensive clustering process, you must uncomment the last line in tagging_pipeline.py and run it again. This is a periodic maintenance task, not an everyday one.
+```
+This command will only perform the tagging of new documents.
+
+To run the full, expensive clustering process to build or update the tag hierarchy, use the `--build-hierarchy` flag:
+```bash
+python tagging_pipeline.py --build-hierarchy
+```
+This is typically a periodic maintenance task, not something you need to run every day.
 Stage 3: Run the Application
 Once the knowledge base is built, you can start the interactive application.
 streamlit run app.py
