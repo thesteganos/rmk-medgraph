@@ -43,10 +43,10 @@ graph TD
         N[2. User Feedback] --> O(expert_review_tool.py);
         P[3. Automated Discovery] --> O;
         O -- Approved Knowledge --> K;
-    end
+        I -- User Feedback --> N;
+        F -- Knowledge Gap --> P;
+```
 
-    I -- User Feedback --> N;
-    F -- Knowledge Gap --> P;
 2. Triple Graph Construction
 Our knowledge base is a three-tiered graph in Neo4j, ensuring maximum reliability:
 Layer 1 (RAG Data): Knowledge extracted from your private documents.
@@ -55,6 +55,9 @@ Layer 3 (Controlled Vocabulary): A foundational layer of formal definitions from
 This structure enriches every piece of information with verifiable sources and definitions.
 3. Hierarchical Knowledge Organization & U-Retrieval Strategy
 We don't just dump vectors into a database. The system summarizes document chunks with medical tags, then uses an offline clustering process to build a multi-level semantic hierarchy. This enables a novel, two-phase retrieval process that mimics expert reasoning:
+
+
+```mermaid
 sequenceDiagram
     participant User
     participant U_Retrieval as U-Retrieval Node
@@ -84,6 +87,8 @@ sequenceDiagram
     end
     
     U_Retrieval-->>User: Final, context-rich answer
+```
+
 4. Human-in-the-Loop Governance
 No knowledge enters the trusted graph without expert approval. A dedicated review tool allows a human to validate all AI-generated propositions and user feedback, ensuring the system's safety and integrity.
 Tech Stack
@@ -95,15 +100,18 @@ Tech Stack
 | Graph Database | Neo4j & GDS Library         | Stores the structured knowledge graph and performs high-speed vector searches.       |
 | Embeddings     | HuggingFace all-MiniLM-L6-v2 | Generates vector representations of text for semantic understanding.                 |
 | External Tools | BioPython (Entrez)          | Fetches real-time data from the PubMed scientific database.                          |
+
 🚀 Getting Started: A Three-Stage Workflow
 To get MedGraphRAG running, you must follow these three stages in order.
 Stage 1: System Setup
 This stage prepares your environment.
 1. Clone the Repository:
+
 ```bash
 git clone https://github.com/YOUR_USERNAME/medgraphrag.git
 cd medgraphrag
 ```
+
 2. Install Dependencies:
 It's highly recommended to use a virtual environment.
 ```bash
