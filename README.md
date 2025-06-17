@@ -15,7 +15,7 @@ This project serves as a production-grade blueprint for building reliable AI sys
 
 This system is built on four pillars that distinguish it from conventional RAG chatbots:
 
-#### 1. Overall System Architecture
+#### 1. High-Level Application Logic and Knowledge Lifecycle
 The MedGraphRAG ecosystem is divided into two main parts: the **Online Runtime Graph** that handles user queries in real-time, and the **Offline Knowledge Lifecycle** that ingests, organizes, and curates the knowledge base.
 
 ```mermaid
@@ -46,6 +46,130 @@ graph TD
         I -- User Feedback --> N;
         F -- Knowledge Gap --> P;
     end
+```
+
+### Detailed System Components and Data Flow
+The following diagram provides a more granular view of the system components, their interactions, and the flow of data through the various processing pipelines and the Neo4j database:
+```mermaid
+graph TD
+    %% === External Data & User ===
+    subgraph ExternalData [External Data & User]
+        direction LR
+        User((User))
+        PDFs["📄 PDF Files (data/)"]
+        Websites["🌐 Trusted Websites (WHO, NIH)"]
+        MockData["🧪 Mock UMLS/Paper Data"]
+    end
+
+    %% === Data Processing & Ingestion Pipelines ===
+    subgraph IngestionPipelines [Data Processing & Ingestion Pipelines]
+        direction TB
+        PopulateRepo["populate_repository_graph.py"]
+        Ingest["ingest.py"]
+        KnowledgePipeline["knowledge_pipeline.py"]
+
+        PopulateRepo --> ProcessedPopulateRepoLog{{"(creates GDS indexes & initial entities)"}}
+
+        Ingest --> ProcessedPDFsLog["📄 db/processed_files.log"]
+
+        KnowledgePipeline --> PendingReviewJsonl["📝 pending_review.jsonl"]
+        KnowledgePipeline --> ProcessedURLsLog["🌐 processed_urls.log"]
+
+        PendingReviewJsonl --> ManualReview["🧑‍💻 Manual Review & Ingestion into Neo4j"]
+    end
+
+    %% === Neo4j Graph Database ===
+    subgraph Neo4jDatabase [Neo4j Graph Database]
+        direction LR
+        Neo4jDB["((Neo4j DB))"]
+
+        subgraph Entities [Knowledge Entities]
+            direction TB
+            MetaGraphs["MetaMedGraph (Doc Chunks)"]
+            RAGEntities["RAG_Entity (Chunk Entities)"]
+            UMLS["UMLS_Entity (Vocabulary)"]
+            Papers["Paper_Entity (Literature)"]
+        end
+
+        subgraph Tags [Tag Hierarchy]
+            direction TB
+            TagSum["TagSummary (L0 Tags)"]
+            AbstractTags["AbstractTag (L1+ Tags)"]
+        end
+
+        GDSIdx["GDS Vector Indexes (umls-embeddings, paper-embeddings)"]
+
+        %% Neo4j Internal Structure
+        MetaGraphs -.-> GDSIdx
+        RAGEntities -.-> GDSIdx
+        UMLS -.-> GDSIdx
+        Papers -.-> GDSIdx
+        TagSum -.-> GDSIdx
+        AbstractTags -.-> GDSIdx
+
+        MetaGraphs -- "contains" --> RAGEntities
+        RAGEntities -- "linked_to (via GDS)" --> UMLS
+        RAGEntities -- "linked_to (via GDS)" --> Papers
+        MetaGraphs -- "HAS_TAG_SUMMARY" --> TagSum
+        AbstractTags -- "SUMMARIZES" --> TagSum
+        AbstractTags -- "SUMMARIZES" --> AbstractTags
+
+
+        Neo4jDB ~~~ MetaGraphs & RAGEntities & UMLS & Papers & TagSum & AbstractTags & GDSIdx
+    end
+
+    %% === Tagging Pipeline ===
+    subgraph Tagging [Tagging Pipeline]
+        TaggingPipeline["tagging_pipeline.py"]
+    end
+
+    %% === Application Layer ===
+    subgraph Application [Application Layer]
+        direction TB
+        App["app.py (Streamlit UI)"]
+        MedGraphRAG["src/graph.py (WeightManagementGraph)"]
+        GoogleSearchTool["🛠️ Google Search (via LLM Tool)"]
+    end
+
+    %% === Data Flows ===
+    %% Populate Repo
+    MockData --> PopulateRepo
+    PopulateRepo -- "writes" --> Neo4jDB
+
+    %% Ingest PDFs
+    PDFs --> Ingest
+    Ingest -- "writes" --> Neo4jDB
+
+    %% Knowledge Pipeline
+    Websites --> KnowledgePipeline
+    ManualReview -- "writes" --> Neo4jDB
+
+    %% Tagging Pipeline
+    TaggingPipeline -- "reads/writes" --> Neo4jDB
+
+    %% Application
+    User -- "interacts" --> App
+    App -- "delegates to" --> MedGraphRAG
+    MedGraphRAG -- "reads from" --> Neo4jDB
+    MedGraphRAG -- "uses" --> GoogleSearchTool
+    MedGraphRAG -- "responds to" --> App
+
+    classDef default fill:#f9f9f9,stroke:#333,stroke-width:2px;
+    classDef db fill:#D6EAF8,stroke:#2980B9,stroke-width:2px;
+    classDef script fill:#E8F8F5,stroke:#1ABC9C,stroke-width:2px;
+    classDef file fill:#FEF9E7,stroke:#F1C40F,stroke-width:2px;
+    classDef user fill:#FADBD8,stroke:#C0392B,stroke-width:2px;
+    classDef tool fill:#EBDEF0,stroke:#8E44AD,stroke-width:2px;
+    classDef manual fill:#F5EEF8,stroke:#A569BD,stroke-width:2px;
+
+    class User user;
+    class PDFs,Websites,MockData,PendingReviewJsonl,ProcessedPDFsLog,ProcessedURLsLog file;
+    class PopulateRepo,Ingest,KnowledgePipeline,TaggingPipeline,App,MedGraphRAG script;
+    class Neo4jDB,GDSIdx,MetaGraphs,RAGEntities,UMLS,Papers,TagSum,AbstractTags db;
+    class GoogleSearchTool tool;
+    class ManualReview manual;
+    class ProcessedPopulateRepoLog file;
+
 ```
 
 2. Triple Graph Construction
