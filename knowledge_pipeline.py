@@ -20,10 +20,18 @@ TRUSTED_SOURCES = {
 TERMS_OF_INTEREST = [
     "semaglutide for weight loss",
     "intermittent fasting science",
+    "metabolic syndrome risk factors",
+    "benefits of regular physical activity",
+    "understanding cholesterol levels",
+    "managing type 2 diabetes with diet",
+    "common nutritional deficiencies",
 ]
 TRUSTED_SEARCH_SITES = {
     "Mayo Clinic Search": "https://www.mayoclinic.org/search/search-results?q={query}",
     "NIH Search": "https://www.nih.gov/search/results?keys={query}",
+    "CDC Search": "https://www.cdc.gov/search/?query={query}",
+    "MedlinePlus Search": "https://medlineplus.gov/search/all?query={query}",
+    "Cleveland Clinic Search": "https://my.clevelandclinic.org/search?q={query}",
 }
 
 PENDING_REVIEW_FILE = "pending_review.jsonl"
@@ -88,9 +96,24 @@ def main():
 
     llm = ChatGoogleGenerativeAI(model=model_name, temperature=0, google_api_key=google_api_key)
     prompt = ChatPromptTemplate.from_template(
-        """You are a medical knowledge extraction system. Read the article and generate a single, clear question it answers, and a detailed answer based ONLY on the text.
-    Your output MUST be a single, valid JSON object with keys "question" and "answer". Do not include any other text or formatting.
-    ARTICLE TEXT: --- {article_text} ---"""
+        """You are a highly specialized medical knowledge extraction system. Your task is to analyze the provided medical article text and formulate a specific, answerable question that the text addresses, along with a comprehensive yet concise answer derived exclusively from the provided text.
+
+**Instructions:**
+1.  **Specificity:** The question should be specific and target a key piece of information or conclusion presented in the article. Avoid overly broad questions.
+2.  **Fidelity:** The answer MUST be based ONLY on the information explicitly stated or clearly implied within the provided 'ARTICLE TEXT'. Do not introduce external knowledge or assumptions.
+3.  **Clarity & Conciseness:** The answer should be clear, easy to understand, and as concise as possible while still capturing the essential information needed to address the question thoroughly.
+4.  **JSON Output:** Your output MUST be a single, valid JSON object. This object should contain exactly two keys: "question" and "answer". Do not include any explanatory text, markdown formatting, or any other content outside of this JSON structure.
+
+**Example of a good question:** "What were the primary cardiovascular outcomes observed in patients with Type 2 Diabetes continuously using Metformin, according to the 2023 Journal of Internal Medicine study?"
+**Example of a less ideal question:** "What does the article say about diabetes?"
+
+ARTICLE TEXT:
+---
+{article_text}
+---
+
+JSON OUTPUT:
+"""
     )
     extraction_chain = prompt | llm | StrOutputParser()
 

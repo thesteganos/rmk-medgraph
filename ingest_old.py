@@ -15,25 +15,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src'
 from utils import get_embedding_model
 
 load_dotenv()
-
-DEFAULT_PAPER_LINKING_THRESHOLD = 0.85
-DEFAULT_UMLS_LINKING_THRESHOLD = 0.90
-
-try:
-    PAPER_LINKING_THRESHOLD = float(os.getenv("PAPER_LINKING_THRESHOLD", str(DEFAULT_PAPER_LINKING_THRESHOLD)))
-except ValueError:
-    print(f"Warning: Invalid value for PAPER_LINKING_THRESHOLD. Must be a float. Using default: {DEFAULT_PAPER_LINKING_THRESHOLD}")
-    PAPER_LINKING_THRESHOLD = DEFAULT_PAPER_LINKING_THRESHOLD
-
-try:
-    UMLS_LINKING_THRESHOLD = float(os.getenv("UMLS_LINKING_THRESHOLD", str(DEFAULT_UMLS_LINKING_THRESHOLD)))
-except ValueError:
-    print(f"Warning: Invalid value for UMLS_LINKING_THRESHOLD. Must be a float. Using default: {DEFAULT_UMLS_LINKING_THRESHOLD}")
-    UMLS_LINKING_THRESHOLD = DEFAULT_UMLS_LINKING_THRESHOLD
-
-print(f"INFO: Paper linking threshold: {PAPER_LINKING_THRESHOLD}")
-print(f"INFO: UMLS linking threshold: {UMLS_LINKING_THRESHOLD}")
-
 DATA_PATH = "data"
 DB_PATH = "db"
 PROCESSED_LOG_FILE = os.path.join(DB_PATH, "processed_files.log")
@@ -171,21 +152,21 @@ def link_to_repository(rag_entity_name: str, driver: GraphDatabase.driver, embed
         session.run("""
             CALL gds.vector.knn('paper-embeddings', $embedding, {topK: 1, similarityMetric: 'COSINE'})
             YIELD node, similarity
-            WHERE similarity > $paper_sim_threshold
+            WHERE similarity > 0.85
             WITH node AS paper_node
             MATCH (r:RAG_Entity {name: $rag_name})
             MERGE (r)-[:IS_REFERENCED_BY]->(paper_node)
-        """, embedding=entity_embedding, rag_name=rag_entity_name, paper_sim_threshold=PAPER_LINKING_THRESHOLD)
+        """, embedding=entity_embedding, rag_name=rag_entity_name)
 
         # Link to UMLS Vocabulary (Layer 3)
         session.run("""
             CALL gds.vector.knn('umls-embeddings', $embedding, {topK: 1, similarityMetric: 'COSINE'})
             YIELD node, similarity
-            WHERE similarity > $umls_sim_threshold
+            WHERE similarity > 0.90
             WITH node AS umls_node
             MATCH (r:RAG_Entity {name: $rag_name})
             MERGE (r)-[:HAS_DEFINITION_IN]->(umls_node)
-        """, embedding=entity_embedding, rag_name=rag_entity_name, umls_sim_threshold=UMLS_LINKING_THRESHOLD)
+        """, embedding=entity_embedding, rag_name=rag_entity_name)
 
 def ingest_text_as_new_document(text: str, doc_id: str, llm, driver, embeddings):
     """Processes a single piece of text and adds it fully to the MedGraphRAG structure."""
