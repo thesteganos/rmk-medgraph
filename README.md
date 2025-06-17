@@ -35,7 +35,7 @@ graph TD
     end
 
     subgraph "Offline Knowledge Lifecycle (Scripts)"
-        J[1. PDFs / Web Articles] --> K(ingest.py);
+        J[PDFs / Web Articles] --> K(ingest.py);
         K -- Chunks & Entities --> L[Neo4j Triple Graph];
         L --> M(tagging_pipeline.py);
         M -- Tags & Hierarchy --> L;
@@ -45,7 +45,7 @@ graph TD
         O -- Approved Knowledge --> K;
         I -- User Feedback --> N;
         F -- Knowledge Gap --> P;
-```
+    end
 
 2. Triple Graph Construction
 Our knowledge base is a three-tiered graph in Neo4j, ensuring maximum reliability:
@@ -68,24 +68,24 @@ sequenceDiagram
     User->>U_Retrieval: Submits "protocol" query
     U_Retrieval->>LLM: Generate tags for query
     LLM-->>U_Retrieval: Query Tags
-    
+
     U_Retrieval->>TagHierarchy: 1. Top-Down Search with Query Tags
     Note right of U_Retrieval: Navigates from abstract<br>to specific tag nodes
     TagHierarchy-->>U_Retrieval: Most relevant MetaMedGraph chunk
-    
+
     U_Retrieval->>KnowledgeGraph: Get initial context from chunk
     KnowledgeGraph-->>U_Retrieval: Entities & Triple-linked neighbors
-    
+
     U_Retrieval->>LLM: Generate initial answer from context
     LLM-->>U_Retrieval: Initial Response
-    
+
     U_Retrieval->>TagHierarchy: 2. Bottom-Up Refinement Path
     loop For each parent tag in path
         TagHierarchy-->>U_Retrieval: Parent Tag Summary
         U_Retrieval->>LLM: Refine response with summary
         LLM-->>U_Retrieval: Refined Response
     end
-    
+
     U_Retrieval-->>User: Final, context-rich answer
 ```
 
