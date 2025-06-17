@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import re
+import asyncio
 from neo4j import GraphDatabase
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.prompts import ChatPromptTemplate
@@ -15,6 +16,15 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src'
 from utils import get_embedding_model
 
 load_dotenv()
+
+MAX_CONCURRENT_GEMINI_CALLS = 5
+try:
+    val = os.getenv("MAX_CONCURRENT_GEMINI_CALLS")
+    if val is not None:
+        MAX_CONCURRENT_GEMINI_CALLS = int(val)
+except ValueError:
+    print(f"Warning: Invalid value for MAX_CONCURRENT_GEMINI_CALLS ('{os.getenv('MAX_CONCURRENT_GEMINI_CALLS')}'). Must be an integer. Using default: {MAX_CONCURRENT_GEMINI_CALLS}")
+
 DATA_PATH = "data"
 DB_PATH = "db"
 PROCESSED_LOG_FILE = os.path.join(DB_PATH, "processed_files.log")
@@ -44,7 +54,7 @@ def get_neo4j_driver():
         print(f"Error connecting to Neo4j: {e}", file=sys.stderr)
         return None
 
-def semantic_chunker(text: str, llm: ChatGoogleGenerativeAI, max_chunk_size=1000) -> list[str]:
+async def semantic_chunker(text: str, llm: ChatGoogleGenerativeAI, semaphore: asyncio.Semaphore, max_chunk_size=1000) -> list[str]:
     """Groups paragraphs by semantic topic using an LLM."""
     print("Starting semantic chunking...")
     prompt = ChatPromptTemplate.from_template(
@@ -70,7 +80,8 @@ def semantic_chunker(text: str, llm: ChatGoogleGenerativeAI, max_chunk_size=1000
             current_chunk = p
             continue
 
-        response = chain.invoke({"current_chunk": current_chunk, "new_paragraph": p})
+        async with semaphore:
+            response = await chain.ainvoke({"current_chunk": current_chunk, "new_paragraph": p})
         if "yes" in response.content.lower():
             current_chunk += "\n\n" + p
         else:
@@ -81,7 +92,7 @@ def semantic_chunker(text: str, llm: ChatGoogleGenerativeAI, max_chunk_size=1000
     print(f"Semantic chunking complete. Created {len(chunks)} chunks.")
     return chunks
 
-def extract_entities_from_chunk(chunk_text: str, llm: ChatGoogleGenerativeAI) -> list:
+async def extract_entities_from_chunk(chunk_text: str, llm: ChatGoogleGenerativeAI, semaphore: asyncio.Semaphore) -> list:
     """Extracts entities from a text chunk."""
     prompt = ChatPromptTemplate.from_template(
         """You are an expert biomedical entity extractor. Your task is to identify and extract relevant biomedical entities from the provided text chunk. For each entity, you must provide its name, a precise type, and the surrounding context from the text that supports its extraction.
@@ -136,8 +147,9 @@ Respond in JSON format:
     )
     chain = prompt | llm
     try:
-        response = chain.invoke({"chunk": chunk_text}).content
-        cleaned_response = response.strip().replace("```json", "").replace("```", "").strip()
+        async with semaphore:
+            response = await chain.ainvoke({"chunk": chunk_text})
+        cleaned_response = response.content.strip().replace("```json", "").replace("```", "").strip()
         return json.loads(cleaned_response)
     except Exception as e:
         print(f"Error extracting entities: {e}", file=sys.stderr)
@@ -168,17 +180,17 @@ def link_to_repository(rag_entity_name: str, driver: GraphDatabase.driver, embed
             MERGE (r)-[:HAS_DEFINITION_IN]->(umls_node)
         """, embedding=entity_embedding, rag_name=rag_entity_name)
 
-def ingest_text_as_new_document(text: str, doc_id: str, llm, driver, embeddings):
+async def ingest_text_as_new_document(text: str, doc_id: str, llm, driver, embeddings, semaphore: asyncio.Semaphore):
     """Processes a single piece of text and adds it fully to the MedGraphRAG structure."""
     print(f"--- Ingesting new text for doc_id: {doc_id} ---")
-    chunks = semantic_chunker(text, llm)
+    chunks = await semantic_chunker(text, llm, semaphore) # Pass semaphore
 
-    with driver.session() as session:
+    with driver.session() as session: # Neo4j operations remain synchronous
         for i, chunk in enumerate(chunks):
             chunk_id = f"{doc_id}_chunk_{i}"
             session.run("MERGE (g:MetaMedGraph {chunk_id: $chunk_id})", chunk_id=chunk_id)
 
-            entities = extract_entities_from_chunk(chunk, llm)
+            entities = await extract_entities_from_chunk(chunk, llm, semaphore) # Pass semaphore
             for entity in entities:
                 entity_name = entity.get("name")
                 if not entity_name: continue
@@ -206,7 +218,7 @@ def log_processed_file(filename):
     with open(PROCESSED_LOG_FILE, "a", encoding='utf-8') as f:
         f.write(filename + "\n")
 
-def main():
+async def main():
     """Main ingestion script for user-provided documents."""
     llm = get_llm()
     driver = get_neo4j_driver()
@@ -231,18 +243,41 @@ def main():
 
     print(f"Found {len(new_files)} new document(s) to process: {new_files}")
 
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_GEMINI_CALLS)
+    ingestion_tasks = []
+
     for filename in new_files:
-        if not filename.lower().endswith('.pdf'): continue
+        if not filename.lower().endswith('.pdf'):
+            print(f"Skipping non-PDF file: {filename}")
+            continue
         file_path = os.path.join(DATA_PATH, filename)
         try:
-            print(f"\nProcessing '{filename}'...")
+            print(f"\nPreparing to process '{filename}'...")
             loader = PyPDFLoader(file_path)
             document_text = "\n\n".join(p.page_content for p in loader.load())
-            ingest_text_as_new_document(document_text, filename, llm, driver, embeddings)
+            # Create a task for each document ingestion, passing the semaphore
+            ingestion_tasks.append(ingest_text_as_new_document(document_text, filename, llm, driver, embeddings, semaphore))
+        except Exception as e:
+            print(f"Error preparing file {filename} for ingestion: {e}", file=sys.stderr)
+
+    # Run all ingestion tasks concurrently
+    results = await asyncio.gather(*ingestion_tasks, return_exceptions=True)
+
+    # Ensure 'new_files' corresponds to 'results' if some files were skipped.
+    # A more robust way would be to store (filename, task) tuples if pre-processing can fail.
+    # For this refactor, we'll assume the order is maintained for successfully prepared files.
+    # We need to filter 'new_files' to only include those for which tasks were actually created.
+
+    files_for_which_tasks_were_created = [
+        f for f in new_files if f.lower().endswith('.pdf')
+    ]
+
+    for filename, result in zip(files_for_which_tasks_were_created, results):
+        if isinstance(result, Exception):
+            print(f"Error processing file {filename}: {result}", file=sys.stderr)
+        else:
             log_processed_file(filename)
             print(f"Successfully processed and logged '{filename}'.")
-        except Exception as e:
-            print(f"Error processing file {filename}: {e}", file=sys.stderr)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

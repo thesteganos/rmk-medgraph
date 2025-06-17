@@ -261,7 +261,17 @@ Copy the template and fill in your credentials.
 ```bash
 cp .env.example .env
 ```
-Open the new .env file and add your GOOGLE_API_KEY and the NEO4J_PASSWORD you just created.
+Open the new .env file and add your `GOOGLE_API_KEY` and the `NEO4J_PASSWORD` you just created.
+
+The `.env.example` file lists all configurable variables. Key ones include:
+*   `GOOGLE_API_KEY`: Your Google API key for Gemini.
+*   `LLM_MODEL`: The specific Gemini model to use (e.g., "gemini-1.5-flash-latest").
+*   `NEO4J_URI`: Connection URI for your Neo4j instance.
+*   `NEO4J_USERNAME`: Username for Neo4j.
+*   `NEO4J_PASSWORD`: Password for Neo4j.
+*   `ENTREZ_EMAIL` & `ENTREZ_API_KEY`: For PubMed search tool.
+*   `MAX_CONCURRENT_GEMINI_CALLS`: (Optional) The maximum number of concurrent calls to the Gemini API during data ingestion. Defaults to 5. This helps manage API rate limits and system load.
+
 Stage 2: Knowledge Base Construction
 This is the core offline process where you build the AI's brain.
 Step 2.1: Populate the Foundational Repository (One-Time Task)
