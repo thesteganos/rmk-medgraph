@@ -41,7 +41,7 @@ graph TD
         M -- Tags & Hierarchy --> L;
 
         N[2. User Feedback] --> O(expert_review_tool.py);
-        P[3. Automated Discovery] --> O;
+        P[Automated Discovery] --> O;
         O -- Approved Knowledge --> K;
         I -- User Feedback --> N;
         F -- Knowledge Gap --> P;
