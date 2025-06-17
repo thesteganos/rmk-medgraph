@@ -46,6 +46,7 @@ graph TD
         I -- User Feedback --> N;
         F -- Knowledge Gap --> P;
     end
+```
 
 2. Triple Graph Construction
 Our knowledge base is a three-tiered graph in Neo4j, ensuring maximum reliability:
