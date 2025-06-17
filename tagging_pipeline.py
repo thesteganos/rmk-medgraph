@@ -16,8 +16,17 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src'
 from utils import get_embedding_model
 
 MEDICAL_TAG_CATEGORIES = [
-    "Symptoms", "Patient History", "Body Functions", "Medication",
-    "Treatment", "Diagnosis", "Lab Results", "Anatomy"
+    "Primary Condition/Topic",
+    "Symptoms & Signs",
+    "Etiology & Risk Factors",
+    "Pathophysiology",
+    "Diagnostic Methods",
+    "Treatment Modalities",
+    "Preventive Measures",
+    "Prognosis & Complications",
+    "Epidemiology",
+    "Relevant Anatomy",
+    "Key Lab Results/Biomarkers"
 ]
 
 def get_llm():
@@ -62,11 +71,20 @@ def get_neo4j_driver():
 def tag_graphs_with_llm(driver: GraphDatabase.driver, llm: ChatGoogleGenerativeAI, embeddings):
     """Finds untagged MetaMedGraphs and generates structured tag summaries with embeddings."""
     print("--- Starting Graph Tagging Pipeline ---")
-    tag_prompt_template = ChatPromptTemplate.from_template(
-        "Generate a structured summary for the provided medical content. Adhere strictly to these categories:\n"
-        + "\n".join([f"- {cat}: [Description]" for cat in MEDICAL_TAG_CATEGORIES]) +
-        "\n\nIf a category is not relevant, write 'N/A'.\n\nMedical Content:\n---\n{content}\n---"
+    tag_prompt_text = (
+        "You are a medical expert system. Your task is to generate a concise yet comprehensive, structured summary for the provided 'Medical Content'. "
+        "The 'Medical Content' is a collection of 'Entity: Context' pairs extracted from a specific document chunk.\n\n"  # Note: \n are for multiline in a single string
+        "Your goal is to distill this content into a structured summary. For each category below, synthesize the information from the 'Medical Content' "
+        "to provide a focused description or a list of the most salient key points. Prioritize information that is central to understanding the chunk's relevance to that category. "
+        "If a category is not substantively addressed in the provided content, explicitly write 'N/A' for that category.\n\n"
+        "Categories:\n"
+        + "\n".join([f"- **{cat}:** [Focused description/salient key points or N/A]" for cat in MEDICAL_TAG_CATEGORIES]) +
+        "\n\nStrictly adhere to this format. The output must be only the structured summary. Do not add any other explanatory text, remarks, or introductions.\n\n"
+        "Medical Content (List of 'Entity: Context' pairs from a document chunk):\n"
+        "---\n{content}\n---\n\n"
+        "Structured Summary:"
     )
+    tag_prompt_template = ChatPromptTemplate.from_template(tag_prompt_text)
     chain = tag_prompt_template | llm
 
     with driver.session() as session:
@@ -131,8 +149,13 @@ def _generate_new_summary(llm, child_texts):
 
     formatted_children = "\n".join(f"- {text}" for text in child_texts)
     prompt = ChatPromptTemplate.from_template(
-        "Summarize the following related medical topics into a single, more abstract parent topic.\n\n"
-        "TOPICS:\n{topics}\n\nABSTRACT PARENT TOPIC:"
+        "You are an expert medical ontologist. Your task is to synthesize a concise and descriptive parent topic summary from two distinct child topic summaries. "
+        "This parent summary must be more abstract and general than the children. Crucially, it must accurately and specifically capture the primary shared concept or theme that links the two child summaries. "
+        "Avoid vague generalizations. The goal is a parent topic that is both abstract and clearly indicative of the underlying commonality. "
+        "Do not simply concatenate or list the child topics.\n\n"  # Note: \n for multiline
+        "CHILD TOPIC SUMMARIES (each representing a distinct cluster of medical information):\n"
+        "---\n{topics}\n---\n\n"
+        "CONCISE, DESCRIPTIVE, AND ABSTRACT PARENT TOPIC SUMMARY:"
     )
     chain = prompt | llm
     try:
@@ -153,7 +176,7 @@ def _store_new_cluster(session, level, new_summary_text, new_embedding, child_no
     """, text=new_summary_text, level=level, embedding=new_embedding, child_ids=child_node_ids)
     return result.single()["new_node_id"]
 
-def build_tag_hierarchy(driver, llm, embeddings, max_levels=12, merge_percentile=0.8):
+def build_tag_hierarchy(driver, llm, embeddings, max_levels=12, merge_percentile_threshold=0.75):
     """Applies hierarchical clustering to generate abstract tag summaries."""
     print("\n" + "="*50)
     print("--- Starting Tag Hierarchy Building ---")
@@ -181,7 +204,7 @@ def build_tag_hierarchy(driver, llm, embeddings, max_levels=12, merge_percentile
         similarity_matrix = cosine_similarity(vectors)
         similarities = similarity_matrix[np.triu_indices(len(similarity_matrix), k=1)]
         if len(similarities) == 0: break
-        dynamic_threshold = np.percentile(similarities, merge_percentile * 100)
+        dynamic_threshold = np.percentile(similarities, merge_percentile_threshold * 100)
         print(f"Dynamic similarity threshold for merging: {dynamic_threshold:.4f}")
 
         merged_ids = set()

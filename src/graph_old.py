@@ -26,32 +26,8 @@ class GraphState(TypedDict):
     disclaimer_needed: bool
 
 class WeightManagementGraph:
-    def __init__(self, num_initial_entities: int = 7):
+    def __init__(self):
         load_dotenv()
-
-        self.num_initial_entities = num_initial_entities
-        print(f"INFO: Number of initial entities for context retrieval set to: {self.num_initial_entities}")
-
-        # Existing INITIAL_CONTEXT_LIMIT from .env will be overridden by the parameter if provided,
-        # but we can keep its loading logic if it serves other purposes or as a fallback if
-        # the class were instantiated without args (though default is now provided).
-        # For this task, the direct parameter `num_initial_entities` takes precedence.
-        default_env_limit = 5 # Original default if .env var was used
-        try:
-            env_limit = int(os.getenv("INITIAL_CONTEXT_LIMIT", str(default_env_limit)))
-            if env_limit <= 0:
-                print(f"Warning: INITIAL_CONTEXT_LIMIT in .env must be positive. Using default: {default_env_limit} if not overridden by parameter.")
-                # self.num_initial_entities could be set based on this if no param was passed,
-                # but the new __init__ signature with a default makes this less direct.
-            # If num_initial_entities wasn't the default 7, it means it was explicitly passed.
-            # If it's 7 (default), we could consider using env_limit, but the task implies
-            # the new parameter is the primary control. Let's prioritize the new parameter.
-            if self.num_initial_entities == 7 and os.getenv("INITIAL_CONTEXT_LIMIT"): # if default is used and env var exists
-                 print(f"INFO: INITIAL_CONTEXT_LIMIT from .env ('{env_limit}') is also present. The constructor parameter/default ('{self.num_initial_entities}') takes precedence.")
-
-        except ValueError:
-            print(f"Warning: Invalid value for INITIAL_CONTEXT_LIMIT in .env. Must be an integer.")
-
         google_api_key = os.getenv("GOOGLE_API_KEY")
         model_name = os.getenv("LLM_MODEL")
         if not google_api_key or not model_name:
@@ -111,19 +87,16 @@ class WeightManagementGraph:
 
     def _get_initial_context(self, chunk_id: str, query_embedding: list) -> str:
         """Gets the most relevant entities from the target graph and their triple-linked neighbors."""
-        print(f"U-Retrieval: Getting initial context from chunk {chunk_id} with limit {self.num_initial_entities}")
+        print(f"U-Retrieval: Getting initial context from chunk {chunk_id}")
         with self.neo4j_driver.session() as session:
-            # limit_value = self.initial_context_limit # Old way
-            query_text = f"""
-                MATCH (g:MetaMedGraph {{chunk_id: $chunk_id}})<-[:PART_OF]-(e:RAG_Entity)
+            result = session.run("""
+                MATCH (g:MetaMedGraph {chunk_id: $chunk_id})<-[:PART_OF]-(e:RAG_Entity)
                 WITH e, gds.similarity.cosine(e.embedding, $embedding) as score
-                ORDER BY score DESC LIMIT {self.num_initial_entities}
+                ORDER BY score DESC LIMIT 5
                 OPTIONAL MATCH (e)-[:IS_REFERENCED_BY]->(p:Paper_Entity)
                 OPTIONAL MATCH (e)-[:HAS_DEFINITION_IN]->(u:UMLS_Entity)
                 RETURN e.name as name, e.context as context, p.context as paper, u.definition as definition
-            """
-            # Note: Neo4j parameters $chunk_id and $embedding are still handled by session.run
-            result = session.run(query_text, chunk_id=chunk_id, embedding=query_embedding)
+            """, chunk_id=chunk_id, embedding=query_embedding)
 
             context_parts = []
             for record in result:
@@ -155,30 +128,7 @@ class WeightManagementGraph:
         print("---NODE: u_retrieval_node---")
         query = state["query"]
 
-        medical_tag_categories_for_prompt = [
-            "Primary Condition/Topic",
-            "Symptoms & Signs",
-            "Etiology & Risk Factors",
-            "Pathophysiology",
-            "Diagnostic Methods",
-            "Treatment Modalities",
-            "Preventive Measures",
-            "Prognosis & Complications",
-            "Epidemiology",
-            "Relevant Anatomy",
-            "Key Lab Results/Biomarkers"
-        ]
-        categories_str = ", ".join([f"'{cat}'" for cat in medical_tag_categories_for_prompt])
-
-        query_tag_prompt = f"""Your task is to transform a user's medical query into a concise search phrase or a list of 2-3 key medical terms. This output will be used for semantic matching against a knowledge base whose content summaries are structured using the following medical categories: {categories_str}.
-
-Focus on extracting the core medical subject(s) from the user's query, such as the primary medical condition, treatment, diagnostic concept, symptom, or other relevant medical entity. The terms you generate should align well with the kind of information typically found under the aforementioned categories.
-
-User Query: "{query}"
-
-Concise Medical Subject Phrase/Keywords (optimized for matching against the categories above):"""
-        query_tag = self.llm.invoke(query_tag_prompt).content
-
+        query_tag = self.llm.invoke(f"Summarize this medical query into key topics: {query}").content
         query_embedding = self.embeddings.embed_query(query_tag)
 
         target_chunk_id, path = self._find_target_graph_top_down(query_embedding)
@@ -190,22 +140,7 @@ Concise Medical Subject Phrase/Keywords (optimized for matching against the cate
         if not initial_context:
             return {"final_answer": "KNOWLEDGE_GAP", "disclaimer_needed": False}
 
-        prompt_template_str = """You are a highly diligent medical AI assistant. Your primary goal is to accurately answer the user's medical question based *exclusively* on the information contained within the 'Provided Graph Context'.
-
-**Instructions:**
-1.  **Strict Grounding:** Base your answer SOLELY on the 'Provided Graph Context'. Do NOT use any external knowledge or make assumptions beyond what is explicitly stated in the context.
-2.  **Comprehensive Synthesis:** If multiple pieces of information within the context are relevant to the question, synthesize them into a coherent answer.
-3.  **Direct Answer:** Directly answer the question. If the context does not contain the necessary information, clearly and politely state that the answer cannot be found in the provided context.
-4.  **Clarity and Precision:** Formulate your answer with clarity and precision, using neutral and objective language appropriate for medical information.
-
-Provided Graph Context:
----
-{context}
----
-User's Medical Question: {question}
-
-Answer:"""
-        prompt = ChatPromptTemplate.from_template(prompt_template_str)
+        prompt = ChatPromptTemplate.from_template("Answer the question based ONLY on the provided graph context.\nContext: {context}\nQuestion: {question}")
         chain = prompt | self.llm
         initial_response = chain.invoke({"context": initial_context, "question": query}).content
 
@@ -238,24 +173,9 @@ Answer:"""
         return {"final_answer": answer.content, "disclaimer_needed": False}
 
     def hybrid_rag_node(self, state: GraphState):
-        query = state["query"]
-        enhanced_query_for_web_search = f"""You are an AI assistant tasked with answering a medical question using information obtained from a web search. Your response should be informative and based on the search results, but you must not provide medical advice.
-
-**Instructions:**
-1.  **Critical Evaluation:** Critically evaluate the information from the web search results.
-2.  **Source Awareness:** If possible, try to synthesize information from multiple reputable sources found in the search. If information comes from a single source or if there are discrepancies, acknowledge this (e.g., "One source suggests X, while another indicates Y." or "According to [Source Type if identifiable, e.g., a health portal], ...").
-3.  **Prioritize Reputable Sources:** Give preference to information from well-known medical institutions, research organizations, or governmental health agencies if such sources are discernible in the search results.
-4.  **Handle Conflicting Information:** If search results present conflicting information, present the different viewpoints rather than making a definitive statement on the conflict.
-5.  **No Medical Advice:** Summarize the information found. Do NOT provide diagnosis, treatment recommendations, or any form of direct medical advice. The goal is to inform, not to prescribe or guide treatment.
-6.  **Direct Answer to Query:** Focus on directly answering the user's original question based on the synthesized information.
-
-User's original question: "{query}"
-
-Informative Summary based on Web Search (NOT medical advice):"""
-        native_google_search = GenAITool(google_search={}) # GenAITool is imported at the top
-        answer_obj = self.web_search_llm.invoke(enhanced_query_for_web_search, tools=[native_google_search])
-        final_answer = answer_obj.content
-        return {"final_answer": final_answer, "disclaimer_needed": True}
+        native_google_search = GenAITool(google_search={})
+        answer_obj = self.web_search_llm.invoke(state["query"], tools=[native_google_search])
+        return {"final_answer": answer_obj.content, "disclaimer_needed": True}
 
     def canned_safety_response_node(self, state: GraphState):
         return {"final_answer": "I cannot answer this question as it seeks potentially harmful advice. Please consult with a qualified healthcare professional."}

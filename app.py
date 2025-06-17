@@ -55,7 +55,25 @@ st.title("⚕️ MedGraphRAG: Advanced Medical AI")
 @st.cache_resource
 def get_graph():
     print("INFO: Initializing MedGraphRAG agent...")
-    graph_builder = WeightManagementGraph()
+
+    default_context_limit = 7
+    try:
+        context_limit_str = os.getenv("INITIAL_CONTEXT_LIMIT")
+        if context_limit_str:
+            initial_context_limit = int(context_limit_str)
+            if initial_context_limit <= 0:
+                print(f"Warning: INITIAL_CONTEXT_LIMIT environment variable ('{context_limit_str}') must be a positive integer. Using default: {default_context_limit}.")
+                initial_context_limit = default_context_limit
+        else:
+            initial_context_limit = default_context_limit
+    except ValueError:
+        # Ensure context_limit_str is defined for the warning message, even if os.getenv returned None
+        context_limit_str_for_warning = context_limit_str if 'context_limit_str' in locals() else "None"
+        print(f"Warning: Invalid value for INITIAL_CONTEXT_LIMIT environment variable ('{context_limit_str_for_warning}'). Must be an integer. Using default: {default_context_limit}.")
+        initial_context_limit = default_context_limit
+
+    print(f"INFO: MedGraphRAG agent will be initialized with num_initial_entities = {initial_context_limit}")
+    graph_builder = WeightManagementGraph(num_initial_entities=initial_context_limit)
     return graph_builder.compile_graph()
 
 def log_feedback(interaction: dict, feedback: str):
