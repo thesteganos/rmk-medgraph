@@ -11,9 +11,8 @@ from dotenv import load_dotenv
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
-# Add src to path to import project modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
-from utils import get_embedding_model
+# Import project modules from the src package
+from src.utils import get_embedding_model
 
 MEDICAL_TAG_CATEGORIES = [
     "Primary Condition/Topic",

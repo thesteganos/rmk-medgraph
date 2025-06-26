@@ -7,11 +7,9 @@ from dotenv import load_dotenv
 import sys
 import asyncio
 
-# Add src to path to import project modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
-
+# Import project modules from the src package
 from ingest import ingest_text_as_new_document, get_neo4j_driver, get_llm
-from utils import get_embedding_model
+from src.utils import get_embedding_model
 
 DB_PATH = "db"
 PENDING_REVIEW_FILE = "pending_review.jsonl"
