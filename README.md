@@ -223,7 +223,7 @@ Tech Stack
 | LLM            | Google Gemini               | Provides the core generative and reasoning capabilities.                             |
 | Frontend       | Streamlit                   | A simple, interactive web interface for the user.                                    |
 | Graph Database | Neo4j & GDS Library         | Stores the structured knowledge graph and performs high-speed vector searches.       |
-| Embeddings     | HuggingFace all-MiniLM-L6-v2 | Generates vector representations of text for semantic understanding.                 |
+| Embeddings     | BioBERT (`pritamdeka/BioBERT-mnli-snli-scinli-scitail-mednli-stsb`) | Generates vector representations of text. Set a different model via `EMBEDDING_MODEL_NAME`. |
 | External Tools | BioPython (Entrez)          | Fetches real-time data from the PubMed scientific database.                          |
 
 🚀 Getting Started: A Three-Stage Workflow
