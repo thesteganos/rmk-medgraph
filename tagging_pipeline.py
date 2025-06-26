@@ -140,7 +140,12 @@ def _get_clusters_for_level(driver, level):
                 WHERE NOT (t)<-[:SUMMARIZES]-()
                 RETURN id(t) AS node_id, t.text AS text, t.embedding as embedding
             """
-        results = session.run(query, level=level - 1)
+        # NOTE: The caller already passes in the desired level to
+        # `_get_clusters_for_level`. Using `level-1` here unintentionally
+        # shifts the query to the wrong hierarchy level, leading to empty
+        # results or incorrect clustering behavior. We should query Neo4j
+        # using the level provided by the caller.
+        results = session.run(query, level=level)
         return [{"node_id": r["node_id"], "text": r["text"], "embedding": r["embedding"]} for r in results]
 
 def _generate_new_summary(llm, child_texts):
