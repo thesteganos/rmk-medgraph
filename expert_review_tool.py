@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 from dotenv import load_dotenv
 import sys
+import asyncio
 
 # Add src to path to import project modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
@@ -16,7 +17,7 @@ DB_PATH = "db"
 PENDING_REVIEW_FILE = "pending_review.jsonl"
 PROCESSED_DIR = "processed_logs"
 
-def process_propositions(driver, llm, embeddings):
+async def process_propositions(driver, llm, embeddings):
     """
     Processes new knowledge, and on approval, ingests it into the full
     MedGraphRAG structure.
@@ -48,7 +49,7 @@ def process_propositions(driver, llm, embeddings):
             doc_id = f"expert_approved_{datetime.now().strftime('%Y%m%d%H%M%S')}"
             
             try:
-                ingest_text_as_new_document(text_to_add, doc_id, llm, driver, embeddings)
+                await ingest_text_as_new_document(text_to_add, doc_id, llm, driver, embeddings)
                 print(f"--> Approved and ingested into knowledge graph.")
                 approved_count += 1
             except Exception as e:
@@ -76,7 +77,7 @@ def main():
         print("FATAL: Could not initialize Neo4j, LLM, or embeddings. Exiting.", file=sys.stderr)
         return
 
-    prop_added = process_propositions(driver, llm, embeddings)
+    prop_added = asyncio.run(process_propositions(driver, llm, embeddings))
     
     if prop_added > 0:
         print(f"\n--- WORKFLOW COMPLETE ---")
