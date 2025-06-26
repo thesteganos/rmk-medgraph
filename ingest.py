@@ -11,9 +11,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 
-# Add src to path to import project modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
-from utils import get_embedding_model
+# Import project modules from the src package
+from src.utils import get_embedding_model
 
 load_dotenv()
 
